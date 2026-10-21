@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Perdas Shopee</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <label>EXIBIR SEMANA SALVA NO SITE: <select id="weekSel"></select></label>
+    <button id="btnFiles" class="ghost">📁 Arquivos salvos</button>
+  </div>
+  <header class="banner"><span class="bag">🛍</span><h1 id="title">SHOPEE PERDAS</h1><span class="bag">🛍</span></header>
+  <div id="delta" class="delta" hidden></div>
+  <p id="total" class="total"></p>
+  <main class="grid">
+    <div class="col">
+      <section class="card"><table><thead><tr><th>SVC</th><th class="r">QT. PERDAS</th><th class="r">VALOR</th></tr></thead><tbody id="tSvc"></tbody></table></section>
+      <section class="card"><table><thead><tr><th>CAUSA</th><th class="r">QT. PERDAS</th><th class="r">VALOR</th></tr></thead><tbody id="tCausa"></tbody></table></section>
+    </div>
+    <section class="card"><table><thead><tr><th>SVC</th><th>Driver</th><th class="r">QT.</th><th class="r">VALOR</th></tr></thead><tbody id="tDrv"></tbody></table></section>
+  </main>
+  <p class="note">Obs: os totais de SVC e Driver refletem apenas os registros exibidos na aba DASH. O total geral oficial da semana é o exibido acima.</p>
+  <section class="panel">
+    <h2>📊 COMPARATIVO HISTÓRICO DE PERDAS POR SEMANA</h2>
+    <p class="mut">Barras por valor (R$) — passe o mouse para ver quantidade e valor de cada semana.</p>
+    <div id="chart" class="chart"></div><div id="tip" class="tip" hidden></div>
+  </section>
+  <section class="import">
+    <h2>📥 IMPORTAR ARQUIVO DA PLANILHA (.ODS OU .XLSX)</h2>
+    <p class="mut">Selecione o arquivo da semana. O sistema procura automaticamente a aba DASH.</p>
+    <div class="row">
+      <input type="file" id="file" accept=".xlsx,.xls,.ods">
+      <label>Salvar para a semana: <input id="weekIn" placeholder="Ex: W36" size="6"></label>
+      <button id="btnGo" class="primary">Processar Arquivo</button>
+    </div>
+    <p id="msg" class="msg"></p>
+  </section>
+</div>
+<dialog id="dlg">
+  <div class="dh"><h3>📁 Arquivos salvos</h3><button id="dClose" class="ghost">Fechar</button></div>
+  <div id="fl"></div>
+  <div class="df"><button id="dAll" class="ghost">Excluir todos</button></div>
+</dialog>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
