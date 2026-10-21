@@ -30,10 +30,10 @@
   </section>
   <section class="import">
     <h2>📥 IMPORTAR ARQUIVO DA PLANILHA (.ODS OU .XLSX)</h2>
-    <p class="mut">Selecione o arquivo da semana. O sistema procura automaticamente a aba DASH.</p>
+    <p class="mut">Selecione o arquivo da semana. Pode selecionar vários de uma vez: o sistema procura a aba DASH e reconhece a semana (ex: W41) de cada um.</p>
     <div class="row">
-      <input type="file" id="file" accept=".xlsx,.xls,.ods">
-      <label>Salvar para a semana: <input id="weekIn" placeholder="Ex: W36" size="6"></label>
+      <input type="file" id="file" accept=".xlsx,.xls,.ods" multiple>
+      <label>Salvar para a semana (só 1 arquivo; opcional): <input id="weekIn" placeholder="Ex: W36" size="6"></label>
       <button id="btnGo" class="primary">Processar Arquivo</button>
     </div>
     <p id="msg" class="msg"></p>

@@ -6,13 +6,58 @@ const wn=w=>parseInt(String(w).replace(/\D/g,''),10)||0;
 const esc=t=>s(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const brl=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0);
 
+
+/* ---- Quando a DASH vem sem as tabelas (pivôs vazios), monta tudo pela aba PERDAS SHOPEE ---- */
+function fromRaw(p,week,cfg){
+  const hr=p.findIndex((r,i)=>i<30&&r&&r.some(c=>/^PERIODO$/i.test(s(c))));
+  if(hr<0)throw new Error('Não encontrei a aba PERDAS SHOPEE com a coluna PERIODO.');
+  const H=p[hr].map(c=>s(c).toUpperCase()),ip=H.indexOf('PERIODO'),is=H.indexOf('SVC'),id=H.indexOf('DRIVER'),iv=H.indexOf('VALOR'),ic=H.indexOf('DRIVE CHECK');
+  const rows=p.slice(hr+1).filter(r=>r&&wk(r[ip])===week);
+  const hide=n=>cfg&&cfg.hide?cfg.hide.has(n):/^(XPT-SOC|SOC)-/i.test(n);
+  const sm=new Map();rows.forEach(r=>{const n=s(r[is]);if(!n||hide(n))return;const o=sm.get(n)||{n,q:0,v:0};o.q++;o.v+=num(r[iv]);sm.set(n,o)});
+  const svc=[...sm.values()].sort((a,b)=>b.q-a.q);
+  const dm=new Map();rows.forEach(r=>{if(!(num(r[ic])))return;const n=s(r[is])||'Total',dn=!s(r[is])||(cfg&&cfg.collapse&&cfg.collapse.has(n))?'':s(r[id]),k=n+'|'+dn,o=dm.get(k)||{svc:n,driver:dn,q:0,v:0};o.q++;o.v+=num(r[iv]);dm.set(k,o)});
+  const tot={};dm.forEach(o=>tot[o.svc]=(tot[o.svc]||0)+o.q);
+  const drv=[...dm.values()].sort((a,b)=>tot[b.svc]-tot[a.svc]||(a.svc<b.svc?-1:a.svc>b.svc?1:0)||b.q-a.q||b.v-a.v);
+  return{svc,drv};
+}
+/* ---- Lê os filtros dos pivôs (SVCs ocultos e SVCs recolhidos) direto do .xlsx ---- */
+async function inflate(u8){const st=new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'));return new Uint8Array(await new Response(st).arrayBuffer())}
+async function zipFiles(u8,want){
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength),td=new TextDecoder(),out={};let e=u8.length-22;
+  while(e>=0&&dv.getUint32(e,true)!==0x06054b50)e--;if(e<0)return out;
+  const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);
+  for(let i=0;i<n;i++){const m=dv.getUint16(p+10,true),cs=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),el=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),off=dv.getUint32(p+42,true),name=td.decode(u8.subarray(p+46,p+46+nl));p+=46+nl+el+cl;
+    if(!want(name))continue;const st=off+30+dv.getUint16(off+26,true)+dv.getUint16(off+28,true),d=u8.subarray(st,st+cs);out[name]=td.decode(m===0?d:await inflate(d))}
+  return out;
+}
+const unx=t=>t.replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+function pivotCfg(F){
+  const cfg={hide:null,collapse:null};
+  for(const n in F){if(!/pivotTables\/pivotTable\d+\.xml$/.test(n))continue;
+    const x=F[n],loc=/<location ref="([A-Z]+)(\d+)/.exec(x),rel=F[n.replace('pivotTables/','pivotTables/_rels/')+'.rels']||'',cn=/pivotCacheDefinition\d+\.xml/.exec(rel),cd=cn&&F['xl/pivotCache/'+cn[0]];
+    if(!loc||!cd)continue;
+    const fl=[...cd.matchAll(/<cacheField name="([^"]*)"[^>]*?(?:\/>|>([\s\S]*?)<\/cacheField>)/g)],fi=fl.findIndex(m=>unx(m[1])==='SVC');if(fi<0)continue;
+    const names=[...(fl[fi][2]||'').matchAll(/<(s|n|m|d|e|b)\b([^>]*?)\/>/g)].map(m=>{const v=/\bv="([^"]*)"/.exec(m[2]);return v?unx(v[1]):''});
+    const pf=[...x.matchAll(/<pivotField\b([^>]*?)(?:\/>|>([\s\S]*?)<\/pivotField>)/g)].find(m=>unx(/\bname="([^"]*)"/.exec(m[1])[1])==='SVC');if(!pf)continue;
+    const its=[...(pf[2]||'').matchAll(/<item\b([^>]*?)\/>/g)].map(m=>m[1]).filter(a=>/\bx="/.test(a));
+    const pick=re=>new Set(its.filter(a=>re.test(a)).map(a=>names[+/\bx="(\d+)"/.exec(a)[1]]));
+    if(loc[1]==='A'&&loc[2]==='9')cfg.hide=pick(/\bh="1"/);
+    if(loc[1]==='E'&&loc[2]==='9')cfg.collapse=pick(/\bsd="0"/);
+  }
+  return cfg;
+}
+
 /* ---- LEITURA DA ABA DASH (d) + aba PERDAS SHOPEE (p) para a tabela de causa ---- */
-function parseDash(d,p){
+function parseDash(d,p,cfg){
   let week=wk((d[0]||[])[0]),count=0;
   for(let i=0;i<Math.min(d.length,12);i++){const m=/(\d+)\s+PERDAS\s+NA\s+(W\d+)/i.exec(s((d[i]||[])[0]));if(m){count=+m[1];if(!/^W\d+$/.test(week))week=m[2].toUpperCase()}}
   const h=d.findIndex(r=>r&&s(r[0]).toUpperCase()==='SVC');
-  if(h<0)throw new Error('Não encontrei as tabelas de SVC na aba DASH.');
   const svc=[],drv=[];let svcT=null,drvT=null,L=true,R=true,cur='';
+  if(h<0){
+    if(!p)throw new Error('Não encontrei as tabelas de SVC na aba DASH.');
+    const X=fromRaw(p,week,cfg);svc.push(...X.svc);drv.push(...X.drv);
+  }else{
   for(let i=h+1;i<d.length&&(L||R)&&i<h+400;i++){const r=d[i]||[];
     if(L){const a=s(r[0]);
       if(/^total/i.test(a)){svcT={q:num(r[1]),v:num(r[2])};L=false}
@@ -22,6 +67,7 @@ function parseDash(d,p){
       if(/^total/i.test(e)){drvT={q:num(r[6]),v:num(r[7])};R=false}
       else if(e||f){if(e)cur=e.replace(/\s+total$/i,'');drv.push({svc:cur,driver:f,q:num(r[6]),v:num(r[7])})}
       else if(drv.length)R=false}}
+  }
   const sum=(a,k)=>a.reduce((t,x)=>t+x[k],0);
   svcT=svcT||{q:sum(svc,'q'),v:sum(svc,'v')};drvT=drvT||{q:sum(drv,'q'),v:sum(drv,'v')};
   /* causa: usa a tabela da DASH se vier preenchida; senão calcula pela aba PERDAS SHOPEE */
@@ -38,7 +84,7 @@ function parseDash(d,p){
   if(!svc.length&&!drv.length)throw new Error('A aba DASH está vazia.');
   return{week,svc,svcT,drv,drvT,causa,causaT,total};
 }
-if(typeof module!=='undefined')module.exports={parseDash};
+if(typeof module!=='undefined')module.exports={parseDash,zipFiles,pivotCfg};
 if(typeof document==='undefined')return;
 
 /* ---- ARMAZENAMENTO (arquivos salvos) ---- */
@@ -88,21 +134,25 @@ $('weekSel').addEventListener('change',e=>{if(store[e.target.value]){cur=e.targe
 /* ---- IMPORTAÇÃO ---- */
 function msg(t,err){const m=$('msg');m.textContent=t;m.className='msg'+(err?' err':'')}
 function aoa(ws){return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null})}
-$('btnGo').addEventListener('click',()=>{
-  const f=$('file').files[0];if(!f){msg('ERRO: Selecione um arquivo primeiro.',1);return}
+function readBuf(f){return new Promise((ok,no)=>{const fr=new FileReader();fr.onerror=()=>no(new Error('não foi possível ler o arquivo'));fr.onload=()=>ok(new Uint8Array(fr.result));fr.readAsArrayBuffer(f)})}
+async function importOne(f,forced){
+  const buf=await readBuf(f),names=XLSX.read(buf,{type:'array',bookSheets:true}).SheetNames;
+  const dn=names.find(n=>/^dash$/i.test(n.trim()));if(!dn)throw new Error('não encontrei uma aba chamada DASH');
+  const pn=names.find(n=>/^perdas\s*shopee$/i.test(n.trim())),wb=XLSX.read(buf,{type:'array',sheets:pn?[dn,pn]:[dn]});
+  let cfg=null;try{if(typeof DecompressionStream!=='undefined')cfg=pivotCfg(await zipFiles(buf,n=>/pivotTables\/[^/]+\.xml$|pivotTables\/_rels\/|pivotCacheDefinition\d+\.xml$/.test(n)))}catch(e){}
+  const rec=parseDash(aoa(wb.Sheets[dn]),pn?aoa(wb.Sheets[pn]):null,cfg),w=forced||rec.week;
+  if(!/^W\d+$/.test(w))throw new Error('não identifiquei a semana');
+  rec.week=w;rec.file=f.name;rec.savedAt=Date.now();store[w]=rec;persist();return rec;
+}
+$('btnGo').addEventListener('click',async()=>{
+  const fs=[...$('file').files];if(!fs.length){msg('ERRO: Selecione pelo menos um arquivo.',1);return}
   if(typeof XLSX==='undefined'){msg('ERRO: Biblioteca de leitura não carregada (verifique a internet).',1);return}
-  msg('Lendo arquivo...');const fr=new FileReader();
-  fr.onerror=()=>msg('ERRO: Não foi possível ler o arquivo.',1);
-  fr.onload=()=>{try{
-    const buf=new Uint8Array(fr.result),names=XLSX.read(buf,{type:'array',bookSheets:true}).SheetNames;
-    const dn=names.find(n=>/^dash$/i.test(n.trim()));if(!dn){msg('ERRO: Não encontrei uma aba chamada DASH nesse arquivo.',1);return}
-    const pn=names.find(n=>/^perdas\s*shopee$/i.test(n.trim())),wb=XLSX.read(buf,{type:'array',sheets:pn?[dn,pn]:[dn]});
-    const rec=parseDash(aoa(wb.Sheets[dn]),pn?aoa(wb.Sheets[pn]):null),w=wk($('weekIn').value)||rec.week;
-    if(!/^W\d+$/.test(w)){msg('ERRO: Não identifiquei a semana. Preencha o campo "Salvar para a semana".',1);return}
-    rec.week=w;rec.file=f.name;rec.savedAt=Date.now();store[w]=rec;persist();cur=w;render();
-    msg(`✔ Semana ${w} salva: ${rec.total.q} perdas · ${brl(rec.total.v)}`);$('weekIn').value='';
-  }catch(e){msg('ERRO: '+e.message,1)}};
-  fr.readAsArrayBuffer(f);
+  const forced=fs.length===1?wk($('weekIn').value):'',out=[];let bad=0,last='';
+  for(const f of fs){msg(`Lendo ${out.length+1} de ${fs.length}: ${f.name}...`);
+    try{const r=await importOne(f,forced);last=r.week;out.push(`✔ ${f.name} → ${r.week} · ${r.total.q} perdas · ${brl(r.total.v)}`)}
+    catch(e){bad++;out.push(`✖ ${f.name}: ${e.message}`)}}
+  if(last){cur=last;render()}
+  msg(out.join('\n'),bad&&!last);$('weekIn').value='';$('file').value='';
 });
 
 /* ---- ARQUIVOS SALVOS ---- */
